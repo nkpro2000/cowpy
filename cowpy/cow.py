@@ -20,6 +20,8 @@ import os
 import shutil
 import argparse
 import random
+import re
+from textwrap import wrap
 
 
 COWACTERS = {}
@@ -71,7 +73,7 @@ class Cowacter(object):
     """Docstring for Cowacter """
 
     def __init__(self, eyes='default', thoughts=False, tongue=False,
-                 body=None):
+                 body=None, wrap=None):
 
         self._eye_type = eyes
         self._eyes = EYES.get(eyes, 'default')
@@ -81,6 +83,7 @@ class Cowacter(object):
         self._tongue = ''
         if tongue:
             self._tongue = 'U '
+        self._wrap = wrap # TODO
 
         self._body = body or ("     {thoughts}   ^__^\n"
                               "      {thoughts}  ({eyes})\\_______\n"
@@ -121,7 +124,10 @@ class Cowacter(object):
             )
 
         try:
-            res = self._bubble(msg)
+            if isinstance(msg, Msg_with_CtrlCh):
+                res = msg._bubble(wrap=self._wrap)
+            else:
+                res = self._bubble(msg)
             return res + self._body.format(thoughts=self._thoughts,
                                            eyes=self._eyes,
                                            tongue=self._tongue)
@@ -1092,6 +1098,100 @@ def milk_random_cow(msg, sfw=True):
                ).milk(msg)
 
 
+class Msg_with_CtrlCh(bytes):
+
+    def __new__(cls, __bytes: bytes = b''):
+        return bytes.__new__(cls, __bytes)
+
+    def __init__(self, __bytes: bytes = b'') -> None:
+        super().__init__()
+
+        non_printable_chrs = [
+            # Escape Chars
+            re.compile('\\x1b[@A-Z\\\]^_]|\\x1b\[[0-9:;<=>?]*[-!"#$%&'"'"'()*+,.\/]*[][\\@A-Z^_`a-z{|}~]'.encode()),
+            # Escape Chars with \r at beginning of printable chars #Experimental
+            re.compile('\\x1b[@A-Z\\\]^_]\\r|\\x1b\[[0-9:;<=>?]*[-!"#$%&'"'"'()*+,.\/]*[][\\@A-Z^_`a-z{|}~]\\r'.encode()),
+            re.compile('(?<=\\n)(?:[%\s]|\\r)*\\r(?!\\n)|(?:\\r)+(?=\\n)'.encode()),
+            re.compile('\\x1b].*\\x07'.encode())
+        ]
+
+        self._bytes = __bytes
+        self._temp = __bytes
+        for pattern in non_printable_chrs:
+            for match in pattern.finditer(self._bytes):
+                st, end = match.start(), match.end()
+                self._temp = self._temp[:st] + (b'\0' * (end-st)) + self._temp[end:]
+
+    def strip(self, __bytes: bytes | None = None) -> "Msg_with_CtrlCh":
+        return self.__class__(super().strip(__bytes))
+
+    def splitlines(self, keepends: bool = False) -> list["Msg_with_CtrlCh"]:
+        lines = []
+        bytes_ = self._bytes
+        temp = self._temp
+        while True:
+            try:
+                i = temp.index(b'\n')
+                if keepends:
+                    line = bytes_[:i+1]
+                else:
+                    line = bytes_[:i]
+                bytes_, temp = bytes_[i+1:], temp[i+1:]
+                lines.append(self.__class__(line))
+            except ValueError:
+                lines.append(self.__class__(bytes_))
+                break
+
+        return lines
+
+    def __len__(self) -> int:
+        return len(self._bytes) - self._temp.count(b'\0')
+
+    def _bubble_line(self, st, mid, len, end):
+        mid = mid.strip(b'\r')
+        mid = mid.ljust(len)
+        mid = mid.replace(b'\r', b'\r'+st)
+        res = st + mid + end
+
+        return res
+
+    def _bubble(self, wrap : int | None = None) -> "Msg_with_CtrlCh":
+        lines = self.splitlines()
+        content_len = max(len(line) for line in lines)
+        border_len = content_len + 2
+        res = b""
+
+        # Try to kick out just the balloon first.
+        res += b" " + (b"_" * border_len ) + b" \n"
+
+        if len(lines) > 1:
+            res += self._bubble_line(b'/ ', lines[0], content_len, b' \\\n')
+            for i in range(1, len(lines) - 1):
+                res += self._bubble_line(b'| ', lines[i], content_len, b' |\n')
+            res += self._bubble_line(b'\\ ', lines[-1], content_len, b' /\n')
+        else:
+            res += b'< ' + lines[0].ljust(content_len) + b' >\n'
+
+        res += b" " + (b"-" * border_len ) + b" \n"
+        return self.__class__(res)
+
+    def __add__(self, sorb: str | bytes) -> "Msg_with_CtrlCh":
+        if isinstance(sorb, bytes):
+            return self.__class__(self._bytes + sorb)
+        else:
+            return self.__class__(self._bytes + sorb.encode())
+    
+    def ljust(self, __width: int, __fillchar: bytes = b' ') -> "Msg_with_CtrlCh":
+        gap = __width - len(self)
+        if gap <= 0:
+            return self
+        else:
+            return self + (__fillchar * gap)
+
+    def replace(self, __old: bytes, __new: bytes, __count: int = -1) -> "Msg_with_CtrlCh":
+        return self.__class__(super().replace(__old, __new, __count))
+
+
 def main():
     logger.debug("main")
 
@@ -1142,14 +1242,26 @@ def main():
                               "python program."),
                         action="store_true")
 
+    parser.add_argument('-W', '--wrap',
+                        default=80, type=int, metavar='column',
+                        help=("Wrap words at or before the given column. Default is 80."))
+    parser.add_argument('-s', '--cch',
+                        help=("Flag for message contains control characters."),
+                        # https://en.wikipedia.org/wiki/ASCII#ASCII_control_characters
+                        action="store_true")
+
     logger.debug("parse the args")
     args = parser.parse_args()
 
     msg = " ".join(args.msg)
 
     if not sys.stdin.isatty():
-        logger.debug("reading from stdin")
-        msg = sys.stdin.read()
+        if args.cch:
+            logger.debug("reading from stdin as bytes")
+            msg = sys.stdin.buffer.read()
+        else:
+            logger.debug("reading from stdin")
+            msg = sys.stdin.read()
 
     exit_early = False
     sfw = not args.nsfw
@@ -1208,15 +1320,20 @@ def main():
             print("{0} is an invalid cowacter".format(args.cowacter))
             sys.exit(1)
 
-    if args.random:
+    if args.random: #TODO
         print(milk_random_cow(msg, sfw=sfw))
         sys.exit(0)
 
-    print(cow(eyes=args.eyes,
-          tongue=args.tongue,
-          thoughts=args.thoughts
-              ).milk(msg)
-          )
+    output = cow(eyes=args.eyes,
+                 tongue=args.tongue,
+                 thoughts=args.thoughts,
+                 wrap=args.wrap
+                ).milk(Msg_with_CtrlCh(msg) if args.cch else msg)
+
+    if args.cch:
+        sys.stdout.buffer.write(output + b'\n')
+    else:
+        print(output)
 
 
 if __name__ == '__main__':
