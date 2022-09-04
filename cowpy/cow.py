@@ -1086,18 +1086,6 @@ def cow_options():
     return COWACTERS.keys()
 
 
-def milk_random_cow(msg, sfw=True):
-    cowacter = random.choice([x[0] for x in get_cowacters(sfw=sfw)])
-    eyes = random.choice([x[0] for x in get_eyes(sfw=sfw)])
-
-    cow = COWACTERS[cowacter]
-
-    return cow(eyes=eyes,
-               tongue=random.choice((True, False)),
-               thoughts=random.choice((True, False))
-               ).milk(msg)
-
-
 class Msg_with_CtrlCh(bytes):
 
     def __new__(cls, __bytes: bytes = b''):
@@ -1320,13 +1308,23 @@ def main():
             print("{0} is an invalid cowacter".format(args.cowacter))
             sys.exit(1)
 
-    if args.random: #TODO
-        print(milk_random_cow(msg, sfw=sfw))
-        sys.exit(0)
+    eyes = args.eyes
+    tongue = args.tongue
+    thoughts = args.thoughts
 
-    output = cow(eyes=args.eyes,
-                 tongue=args.tongue,
-                 thoughts=args.thoughts,
+    if args.random:
+        cowacter = random.choice([x[0] for x in get_cowacters(sfw=sfw)])
+        eyes = random.choice([x[0] for x in get_eyes(sfw=sfw)])
+        tongue = random.choice((True, False))
+        thoughts = random.choice((True, False))
+
+        cow = COWACTERS[cowacter]
+
+    #TODO : support for backspace in --cch
+
+    output = cow(eyes=eyes,
+                 tongue=tongue,
+                 thoughts=thoughts,
                  wrap=args.wrap
                 ).milk(Msg_with_CtrlCh(msg) if args.cch else msg)
 
