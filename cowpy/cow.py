@@ -90,6 +90,7 @@ class Cowacter(object):
                               "         (__)\\       )\\/\\\n"
                               "          {tongue} ||----w |\n"
                               "           ||     ||")
+        self._body = self._body.replace('\$', '$').replace('\*', '*') #TemporaryPatch
 
     def _bubble(self, message):
         lines = message.splitlines()
