@@ -323,6 +323,26 @@ class DragonAndCow(Cowacter):
 COWACTERS['dragonandcow'] = DragonAndCow
 
 
+class Elephant(Cowacter):
+
+    def __init__(self, **kwargs):
+        kwargs['body'] = (
+                " {thoughts}     /\\  ___  /\\\n"
+                "  {thoughts}   // \\/   \\/ \\\\\n"
+                "     ((    O O    ))\n"
+                "      \\\\ /     \\ //\n"
+                "       \\/  | |  \\/\n"
+                "        |  | |  |\n"
+                "        |  | |  |\n"
+                "        |   o   |\n"
+                "        | |   | |\n"
+                "        |m|   |m|\n")
+        super(Elephant, self).__init__(**kwargs)
+
+
+COWACTERS['elephant'] = Elephant
+
+
 class Eyes(Cowacter):
 
     def __init__(self, **kwargs):
